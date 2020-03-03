@@ -1,0 +1,1 @@
+Components of truncated solver as well as background Green's function will be stored here.
