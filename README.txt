@@ -1,11 +1,10 @@
-These codes perform time-lapse Metropolis-Hastings inversion using a local acoustic solver, that was originally developed by 
-Willemsen et. al (2016) 
+These codes perform time-lapse Metropolis-Hastings inversion using a local acoustic solver. This local acoustic solver was originally developed by Willemsen et. al (2016) 
 
 -----------------
 
 GETTING STARTED WITH DOCKER
 
-The docker image was originally build by Gregory Ely. All codes in this image are using python 2.7
+The docker image was originally build by Gregory Ely. All python codes and extensions in this image are using python 2.7
 
 0. Install docker desktop from https://www.docker.com/ and setup an account.
 1. Build the image by opening a terminal and from within the docker_image directory run: docker build -t uqtest .
@@ -59,4 +58,4 @@ a citation.
 
 -----------------
 
-Please let me know, if something doesn't work fine or is missing!
+Please let me know, if something doesn't work fine!
