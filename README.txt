@@ -22,9 +22,7 @@ The docker image was originally build by Gregory Ely. All python codes and exten
 
 FOLDER: METROPOLIS_HASTINGS
 
-This folder contains all the main codes to reproduce the main results from "Kotsi M., A. Malcolm, and G. Ely, Uncertainty quantification in time-lapse
-seismic imaging: a full-wavefield approach : Geophysical Journal International, 2020". If you find these codes useful, we would appreciate
-a citation. 
+This folder contains all the main codes to reproduce the main results from "Kotsi M., A. Malcolm, and G. Ely, Uncertainty quantification in time-lapse seismic imaging: a full-wavefield approach : Geophysical Journal International, 2020". If you find these codes useful, we would appreciate a citation. 
 
 1_generate_true_data.py : assuming that the true models are known and saved in the folder indata, the code generates the true data for baseline and monitor model for 64 shots and 6 frequencies. The data as well as their geometries will be saved in the folder indata.
                          
