@@ -1,0 +1,14 @@
+I decided that the easiest way to get the joint objective to work would be by hacking optimization.py and lbfgs.py
+
+The only real changes are in optimization.py, but lbfgs should inherit from this new optimization (I'm sure there are more elegant ways to do this)
+
+Changing the objective function while leaving optimization untouched was no option. The reason is that in lbfgs and optimization
+we add linear model data contained by modelparameter objects. Initially I thought about making the modelparameter object some kind of 
+aggregate of two children model parameters. I could then overload __add__, __sub__ etc and optimization would be unaware that it was 
+now dealing with a new type of model vector in its optimization (just a model vector twice as long. First half for m0, the other half for m1).
+The problem is that solver.model_parameters can only be a standard type of model parameter. When we set solver.model_parameter, solver does a check.
+Otherwise it would have been an option to let optimization and lbfgs work with the long new modelparameter objects. The new objective function
+object would then take this long modelparameter object and decompose it into its two children. It could then compute the residual and gradient
+turnwise. (Both models could have their own temporalleastsquares objective corresponding to it for instance).
+
+Maybe optimization could be changed slightly so it no longer takes model from solver.model. But it would be trickier. 

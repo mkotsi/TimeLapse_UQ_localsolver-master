@@ -1,0 +1,9 @@
+# grab the condapysit build
+FROM gregoryely/condapysit
+
+COPY . /uqlocalsolver/
+WORKDIR /uqlocalsolver/
+
+# install the pysit extensions
+RUN python setup.py build
+RUN python setup.py install

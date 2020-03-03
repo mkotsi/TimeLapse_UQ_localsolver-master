@@ -1,0 +1,294 @@
+from ctypes import *
+from structs import *
+from pysit.core import DomainBC
+import time 
+import numpy as np
+import warnings
+import os
+#PASSING STRUCT
+#http://stackoverflow.com/questions/4351721/python-ctypes-passing-a-struct-to-a-function-as-a-pointer-to-get-back-data
+
+#Passing string
+#http://stackoverflow.com/questions/12500069/ctypes-how-to-pass-string-from-python-to-c-function-and-how-to-return-string
+
+#PASSING NDARRAY
+
+#POTENTIALLY PASSING AS 2D ARRAY
+#http://stackoverflow.com/questions/22425921/pass-a-2d-numpy-array-to-c-using-ctypes
+
+def reshape_wavefield(wavefield_from_elastic, n_vars, n_snap, nz, nx, shape = '1d'):
+    tt = time.time()
+    if shape == '1d':
+        raise Exception("Untested. probably wrong order. Must use trick as in shape='pysit'?")
+        ret = np.reshape(wavefield_from_elastic, (n_vars, n_snap, nz*nx))
+    elif shape == 'pysit': #Return in same shape pysit stores wavefield. A wavefield is a list with nt 1d-ndarrays. Expensive?
+        wavefields = []
+        for i in xrange(n_vars):
+            wavefield = []
+            offset_var = i * (n_snap*nz*nx)
+            for j in xrange(n_snap):
+                offset_time = j * (nz*nx)
+                offset = offset_var + offset_time
+                snap_2d = np.reshape(wavefield_from_elastic[offset:(offset+nz*nx)], (nz,nx), 'C')
+                snap_1d = np.reshape(snap_2d, (nz*nx,), 'F')
+                wavefield.append(snap_1d) #for each timestep a slice of nz*nx
+                
+            wavefields.append(wavefield) #for each var
+            
+        ret = wavefields
+    elif shape =='2d':
+        ret = np.reshape(wavefield_from_elastic, (n_vars, n_snap, nz, nx))
+    else:
+        raise Exception("wrong shape provided")
+    
+    print "Reshaping took %e seconds\n"%(time.time()-tt)
+    return ret 
+
+def elastic_solve(shots, mesh, vp, rho, vs, optionsdict, **kwargs):
+    print "Do not allocate memory directly on receiverset object ? Only for true data generation we want that"
+    print "Just pass extra double pointers to C. Only try to access them assuming they are allocated when the switch booleans are evaluated"
+     
+    
+    
+    maxint = np.iinfo(c_int).max
+    extra_options = dict()
+    
+    #traces_mem and snaps_mem determine whether the shotgather and wavefields should be stored in memory.
+    extra_options['traces_mem'] = False 
+    extra_options['snaps_mem'] = False
+    #If False, then disk will be used. The output directory is given as default below, but can be updated by kwargs of course    
+    extra_options['traces_output_dir'] = "./"
+    extra_options['snaps_output_dir'] = "./"
+    
+    extra_options['screen_output'] = 1; extra_options['screen_iter_start'] = 0; extra_options['screen_iter_end'] = maxint; extra_options['screen_step_length'] = 100
+    extra_options['snap_output'] = 0; extra_options['snap_iter_start'] = 0; extra_options['snap_iter_end'] = maxint ; extra_options['snap_step_length'] = 10
+    extra_options['traces_output'] = 1; extra_options['traces_iter_start'] = 0; extra_options['traces_iter_end'] = maxint ; extra_options['traces_step_length'] = 1 #traces = hist in c_code
+    extra_options['gx0'] = mesh.domain.x.lbound; extra_options['gz0'] = mesh.domain.z.lbound
+    
+    #by default start on first non PML node on left
+    
+    n_pml_left = mesh.x.lbc.n
+    n_pml_top  = mesh.z.lbc.n
+
+    extra_options['ss_m0'] = n_pml_left; extra_options['ss_dm'] = 1; extra_options['ss_mm'] = mesh.x.n; extra_options['ss_M'] = mesh.x.n
+    extra_options['ss_k0'] = n_pml_top ; extra_options['ss_dk'] = 1; extra_options['ss_kk'] = mesh.z.n; extra_options['ss_K'] = mesh.z.n
+    extra_options['amp0'] = 1
+    extra_options['freq0'] = 1
+    extra_options['itimestep'] = 1 #only do 1 timestep by default
+    extra_options['wavefield_return_shape'] = '1d'
+    
+    #%================= output options ========================%
+    #% var[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]  --> 
+    #%  [vx, vz, pr, div, curl, txx, tzz, txz, vpx, vpz, vsx, vsz]       
+    
+    TwelveIntegers = c_int * 12
+    ii = TwelveIntegers(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)    
+    
+    extra_options['histvar'] = TwelveIntegers(0,0,1,0,0,0,0,0,0,0,0,0) #pr
+    extra_options['ssvar']   = TwelveIntegers(0,0,1,0,0,0,0,0,0,0,0,0) #pr
+
+    extra_options.update(optionsdict)
+    extra_options.update(kwargs) #update the default options
+    
+    retval = dict()
+    saving_wavefield_to_mem = extra_options['snap_output'] and extra_options['snaps_mem']
+    saving_shotgather_to_mem = extra_options['traces_output'] and extra_options['traces_mem']
+    if saving_wavefield_to_mem:
+        retval['wavefields'] = []
+    
+    for i in xrange(len(shots)): #Right now the C code only supports one shot at a time
+        print "Shot number %i: "%i
+        shot = shots[i]
+        
+        #pre-allocate src and rcv position arrays here. Cannot create within create_info_struct function
+        #If you do and create pointer, the arrays pointed to go out of scope in python and are collected by garbage collector sometimes.
+        #Result is garbage for positions.        
+        
+        nsrc = 1 #For now we work with 1 shot per istruct. C code is also assuming 1 shot at a time. Slightly inefficient since for each shot the solver is reinitialized. But insignificant
+        srcx = np.zeros(nsrc)
+        srcz = np.zeros(nsrc)
+        nrcv = shot.receivers.receiver_count #later confirm all shots same receivers. May later adapt this. Right now no problem since we make info struct for one shot at a time
+        rcvx = np.zeros(nrcv)
+        rcvz = np.zeros(nrcv)        
+        
+        istruct = create_info_struct(shot, mesh, extra_options, srcx, srcz, rcvx, rcvz)
+        n_vars = np.sum(extra_options['ssvar'])
+        if saving_wavefield_to_mem:
+            n_snap = int(np.ceil(float(extra_options['itimestep'] - extra_options['snap_iter_start'])/extra_options['snap_step_length']))
+            wavefield = np.zeros(n_vars*n_snap*extra_options['ss_M']*extra_options['ss_K'])
+        else:
+            wavefield = np.zeros(0) #dummy
+        
+        if saving_shotgather_to_mem:
+            n_rec_steps = (extra_options['itimestep'] - extra_options['traces_iter_start'])/extra_options['traces_step_length']
+            shotgather = np.zeros((n_vars*n_rec_steps*nrcv))
+        else:
+            shotgather = np.zeros(0)
+            
+        initiate_solve(istruct, vp, rho, vs, wavefield, shotgather)
+        
+        if saving_wavefield_to_mem:    
+            wavefield = reshape_wavefield(wavefield, n_vars, n_snap, mesh.z.n, mesh.x.n, shape = extra_options['wavefield_return_shape'])
+            retval['wavefields'].append(wavefield)
+            
+
+
+    return retval
+
+def create_info_struct(shot, mesh, extradict, srcx, srcz, rcvx, rcvz): #extract most info from shots and mesh, but put the rest in 'extradict'
+    warnings.warn("In the future I should cache certain checks so they are not performed for each iteration?")
+    warnings.warn("ALSO: I AM ASSUMING I COULD PASS MULTIPLE SHOTS TO THIS FUNCTION RIGHT NOW. BUT THE ELASTIC SOLVER ONLY ALLOWS ONE AT A TIME...")
+    warnings.warn("As quick fix I am calling this function only for one shot at a time.")
+    
+    d = mesh.domain
+    nabs = mesh.x.lbc.n
+    if nabs != mesh.x.rbc.n or nabs != mesh.z.lbc.n or nabs != mesh.z.rbc.n:
+        raise Exception("Right now I expect PML on all sides. Will have to change wrapper to allow free surface")
+
+    if type(d.x.lbc) != Elastic_Code_PML or type(d.x.rbc) != Elastic_Code_PML or type(d.z.lbc) != Elastic_Code_PML or type(d.z.rbc) != Elastic_Code_PML:
+        raise Exception("Not using elastic PML objects")
+    else:
+        okay = 1
+        PPW0 = d.x.lbc.PPW0
+        if PPW0 != d.x.rbc.PPW0 or PPW0 != d.z.lbc.PPW0 or PPW0 != d.z.rbc.PPW0:
+            okay = 0
+        
+        d0factor = d.x.lbc.d0factor
+        if d0factor != d.x.rbc.d0factor or d0factor != d.z.lbc.d0factor or d0factor != d.z.rbc.d0factor:
+            okay = 0
+        
+        p_power =  d.x.lbc.p_power
+        if p_power != d.x.rbc.p_power or p_power != d.z.lbc.p_power or p_power != d.z.rbc.p_power:
+            okay = 0
+                     
+        if not okay:
+            raise Exception("Something wrong with PML")
+        
+    if mesh.x.delta == mesh.z.delta:
+        uniform_spacing = mesh.x.delta
+    else:
+        raise Exception("Not uniformly spaced")  
+       
+       
+
+    if shot.sources.approximation != 'delta':
+        raise Exception('Elastic code only delta right now')
+        
+    srcx[0], srcz[0] = shot.sources.position
+    
+    nrcv = len(rcvx)
+    if nrcv != len(rcvz): raise Exception("Mismatch")
+    
+    if shot.receivers.receiver_count != nrcv:
+        raise Exception("Not fixed spread for sure")
+        
+    for j in xrange(nrcv):
+        rcvx[j], rcvz[j] = shot.receivers.receiver_list[j].position 
+                
+    srcx = np.ascontiguousarray(srcx)
+    srcz = np.ascontiguousarray(srcz)
+    rcvx = np.ascontiguousarray(rcvx)
+    rcvz = np.ascontiguousarray(rcvz)
+
+    srcx_ptr = srcx.ctypes.data_as(POINTER(c_double))
+    srcz_ptr = srcz.ctypes.data_as(POINTER(c_double))
+    rcvx_ptr = rcvx.ctypes.data_as(POINTER(c_double))
+    rcvz_ptr = rcvz.ctypes.data_as(POINTER(c_double))
+        
+    nhist = nrcv
+         
+    
+    screen = outparams(extradict['screen_output'],extradict['screen_iter_start'],extradict['screen_iter_end'],extradict['screen_step_length'])
+    snap = outparams(extradict['snap_output'],extradict['snap_iter_start'],extradict['snap_iter_end'],extradict['snap_step_length'])
+    hist = outparams(extradict['traces_output'],extradict['traces_iter_start'],extradict['traces_iter_end'],extradict['traces_step_length'])
+
+    saving_wavefield_to_mem = extradict['snap_output'] and extradict['snaps_mem']
+    saving_shotgather_to_mem = extradict['traces_output'] and extradict['traces_mem']
+    
+    ss = ssparams(extradict['ssvar'],
+                  extradict['ss_m0'],
+                  extradict['ss_dm'],
+                  extradict['ss_mm'],
+                  extradict['ss_k0'],
+                  extradict['ss_dk'],
+                  extradict['ss_kk'],                  
+                  extradict['ss_M'],
+                  extradict['ss_K']
+                  )
+    
+    istruct = info_struct(mesh.x.n, #MM
+                          mesh.z.n, #KK
+                          nabs, #nabs
+                          c_int(0), #ifscb, RIGHT NOW ONLY SUPPORTING PML IN WRAPPER
+                          d0factor, 
+                          PPW0, 
+                          p_power,
+                          uniform_spacing, #dx
+                          extradict['dt'],
+                          extradict['itimestep'],
+                          extradict['gx0'],
+                          extradict['gz0'],
+                          0, #iwavelet hardcoded as 0 for now (Ricker). Later change so that you will read source wavelet from shot object
+                          extradict['amp0'],
+                          extradict['freq0'],
+                          0, #isourcecomp. Right now just use 0, point explosion. But 1 (moment tensor) or 2 (vector force) may be good as well
+                          1, #nsrc (currently hardcoded 1)
+                          srcx_ptr, 
+                          srcz_ptr,
+                          screen,
+                          snap,
+                          hist,
+                          extradict['histvar'],
+                          ss,
+                          nhist,
+                          rcvx_ptr,
+                          rcvz_ptr,
+                          saving_shotgather_to_mem, 
+                          saving_wavefield_to_mem,
+                          extradict['traces_output_dir'],
+                          extradict['snaps_output_dir']
+                          )
+    return istruct
+    
+def initiate_solve(istruct, vp, rho, vs, wavefield, shotgather):
+    def load_func(): #Will be called only once. Load the function from the so
+        lib = cdll.LoadLibrary(os.path.dirname(__file__) +'/elastic_c_code/_elastic_solver.so') #os.path.dirname(__file__) gets path of this wrapper function
+        func = lib.solve
+        func.restype  = c_int
+        func.argtypes = [POINTER(info_struct), 
+                         np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS"), #vp
+                         np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS"), #rho
+                         np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS"), #vs
+                         np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS"), #wavefield
+                         np.ctypeslib.ndpointer(c_double, flags="C_CONTIGUOUS")] #shotgather
+        return func
+    
+    try: #See if we already loaded the shared lib and got func setup
+        func = initiate_solve.func
+    except: #If not, load and setup
+        func = load_func()
+        initiate_solve.func = func
+    
+    try:
+        func(istruct, np.ascontiguousarray(vp), np.ascontiguousarray(rho), np.ascontiguousarray(vs), np.ascontiguousarray(wavefield), np.ascontiguousarray(shotgather))
+    except:
+        raise Exception('something went wrong')
+    
+class Elastic_Code_PML(DomainBC):
+    """ A glorified storage unit
+
+    """
+
+    type = 'pml'
+
+    def __init__(self, length, d0factor, PPW0, p_power):
+        # Length is currently in physical units.
+        self.length = length
+        self.d0factor = d0factor
+        self.PPW0 = PPW0
+        self.p_power = p_power
+        self.boundary_type = type
+
+    def evaluate(self, nval, dummyval): #dummy function
+        return np.zeros(nval) 
+    

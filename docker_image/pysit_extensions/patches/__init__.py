@@ -1,0 +1,1 @@
+from pysit_extensions.patches.star_patch import star

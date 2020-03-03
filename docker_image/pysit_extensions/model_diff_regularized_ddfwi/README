@@ -1,0 +1,3 @@
+I'm sure this can be implemented more elegantly than by hacking the optimization base class... But not time for figuring that out
+
+Here I am coding the optimization class for DDFWI with the timelapse regularization term. We keep m0 fixed and only perturb m1.

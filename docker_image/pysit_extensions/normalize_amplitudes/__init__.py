@@ -1,0 +1,2 @@
+from pysit_extensions.normalize_amplitudes.normalize_amplitudes import *
+from pysit_extensions.normalize_amplitudes.get_average_energy_ratio import *

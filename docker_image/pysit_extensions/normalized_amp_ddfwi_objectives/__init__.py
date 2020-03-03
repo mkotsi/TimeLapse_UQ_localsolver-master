@@ -1,0 +1,2 @@
+from pysit_extensions.normalized_amp_ddfwi_objectives.temporal_least_squares_ddfwi_difference_then_norm import *
+from pysit_extensions.normalized_amp_ddfwi_objectives.temporal_least_squares_ddfwi_norm_then_difference import *

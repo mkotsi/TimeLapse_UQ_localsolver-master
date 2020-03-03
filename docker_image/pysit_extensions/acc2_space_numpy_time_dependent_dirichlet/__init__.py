@@ -1,0 +1,5 @@
+from pysit_extensions.acc2_space_numpy_time_dependent_dirichlet.constant_density_acoustic_time_scalar_2D import * #horrendously long
+from pysit_extensions.acc2_space_numpy_time_dependent_dirichlet.constant_density_acoustic_time_scalar_base import *
+from pysit_extensions.acc2_space_numpy_time_dependent_dirichlet.data_modeling import *
+
+

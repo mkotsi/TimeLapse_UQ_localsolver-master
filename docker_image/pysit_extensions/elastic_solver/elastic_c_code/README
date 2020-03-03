@@ -1,0 +1,10 @@
+
+This code is designed for the study of seismic wave propagation in fractured medium (P-SV).
+Solving 2-D elastic wave equation in Cartesian Coordinate with Time Domain Finite Difference. 
+    this code can use 3 different staggered FD schemes (staggered in space & time):
+      (i)   Standard Staggered Grid with 4th-order in space and 2nd-order in time accuracy
+      (ii)  2nd-order Rotated Staggered Grid with 2nd-order in space and 2nd-order in time accuracy
+      (iii) 4th-order Rotated Staggered Grid with 4th-order in space and 2nd-order in time accuracy
+ 
+Xinding Fang, MIT-ERL, May 2009
+Email: xinfang@mit.edu

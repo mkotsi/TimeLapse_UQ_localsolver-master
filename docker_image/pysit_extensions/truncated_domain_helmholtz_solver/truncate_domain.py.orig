@@ -1,0 +1,408 @@
+import numpy as np
+from pysit_extensions.truncated_domain_helmholtz_solver.lil_pos_ut import lil_pos_ut
+from pysit_extensions.truncated_domain_helmholtz_solver.truncated_helmholtz_solver import ConstantDensityAcousticFrequencyScalar_2D_truncated_domain
+from pysit.core import *
+from pysit_extensions.impulse_time.impulse_time import ImpulseTimeWavelet as Delta
+from pysit import generate_seismic_data
+from pysit_extensions.umfpack_complex_convenience.umf_solver_truncated_complex import umfpack_wrapper_truncated
+
+#this will return a new solver and a new domain (remember to use the correct positions and not start at 0).
+#for now everything is in 2D
+
+def truncate_domain(solver, shots, boundary_params, freq):
+    sparse_greens_matrix = generate_sparse_greens_matrix(solver, shots, boundary_params, freq) #upper triangular sparse lil_matrix indexed by position
+
+    mesh = solver.mesh
+    n_nodes_x = mesh.x['n']
+    n_nodes_z = mesh.z['n']
+    
+    dx = mesh.x['delta']
+    dz = mesh.z['delta']
+    
+    x_lbc = Dirichlet()
+    x_rbc = Dirichlet()
+    z_lbc = Dirichlet()
+    z_rbc = Dirichlet()
+    
+    domain = mesh.domain
+
+    xpos_top_left_corner = boundary_params['xpos_top_left_corner']
+    zpos_top_left_corner = boundary_params['zpos_top_left_corner']
+    
+    width = boundary_params['width']
+    height = boundary_params['height']
+    
+    x_min = xpos_top_left_corner
+    x_max = xpos_top_left_corner + width
+    
+    z_min = zpos_top_left_corner
+    z_max = zpos_top_left_corner + height
+    
+    truncated_x_config = (x_min, x_max, x_lbc, x_rbc)
+    truncated_z_config = (z_min, z_max, z_lbc, z_rbc)
+    
+    truncated_n_nodes_x = int(np.round((x_max - x_min) / dx + 1))
+    truncated_n_nodes_z = int(np.round((z_max - z_min) / dz + 1))
+    
+    truncated_d = RectangularDomain(truncated_x_config, truncated_z_config)
+    truncated_m = CartesianMesh(truncated_d, truncated_n_nodes_x, truncated_n_nodes_z)
+    
+    #truncated_solver = ConstantDensityAcousticFrequencyScalar_2D_truncated_domain(truncated_m, sparse_greens_matrix) #NEED TO CHANGE THIS SO IT WILL USE UMFPACK
+    truncated_solver_umfpack_wrapper = umfpack_wrapper_truncated(truncated_m, sparse_greens_matrix) #NEED TO CHANGE THIS SO IT WILL USE UMFPACK
+    truncated_solver = truncated_solver_umfpack_wrapper.solver
+    
+    truncated_velocity = truncate_array(solver.model_parameters.without_padding().data, solver, boundary_params)
+    truncated_model = solver.ModelParameters(truncated_m,{'C': truncated_velocity})
+    truncated_solver.model_parameters = truncated_model
+    
+    return truncated_solver
+
+def truncate_array(complete_array_1d, solver, boundary_params):
+    domain = solver.domain
+    if domain.dim != 2:
+        raise Exception("Right now I only work with 2D")
+    
+    complete_x_min = domain.x['lbound']
+    complete_x_max = domain.x['rbound']
+    complete_z_min = domain.z['lbound']
+    complete_z_max = domain.z['rbound']
+
+    mesh = solver.mesh
+    dx = mesh.x['delta']
+    dz = mesh.z['delta']
+    
+    n_nodes_x_complete = mesh.x['n']
+    n_nodes_z_complete = mesh.z['n']
+
+    truncated_xpos_top_left_corner = boundary_params['xpos_top_left_corner']
+    truncated_zpos_top_left_corner = boundary_params['zpos_top_left_corner']
+    
+    width = boundary_params['width']
+    height = boundary_params['height']
+    
+    complete_array_2d = np.reshape(complete_array_1d, (n_nodes_z_complete, n_nodes_x_complete),'F')
+
+    col_left = int(round((truncated_xpos_top_left_corner - complete_x_min)/dx))
+    col_right = int(round((truncated_xpos_top_left_corner + width - complete_x_min)/dx))
+    
+    row_top = int(round((truncated_zpos_top_left_corner - complete_z_min)/dz))
+    row_bot = int(round((truncated_zpos_top_left_corner + height - complete_z_min)/dz))
+
+    truncated_array_2d = complete_array_2d[row_top:row_bot+1, col_left:col_right+1] #+1 because of how the : works. I need row_bot and col_right as well
+    
+    [truncated_n_nodes_z,truncated_n_nodes_x] = truncated_array_2d.shape 
+    
+    truncated_array = np.reshape(truncated_array_2d, (truncated_n_nodes_z*truncated_n_nodes_x,1), 'F')
+    return truncated_array
+
+def generate_sparse_greens_matrix(solver, shots, boundary_params, freq): 
+    #This should figure out what the cheapest way (in number of solves) is to fill the matrix
+    #The greens matrix will be used to form matrices S and T.
+    #In the future I may use an approach that approximates S and T so I only need the green's functions from source to receiver! 
+    
+    validate_truncation_params(solver,boundary_params) #Sanity check on input
+    
+    sparse_connection_matrix = lil_pos_ut(solver.mesh, dtype='bool') #only need to store if there is a connection
+        
+    fill_sparse_connection_matrix(solver, sparse_connection_matrix, shots, boundary_params)
+    
+    connection_count_list = generate_connection_count_list(sparse_connection_matrix) #For now don't use linked list. The cost of deleting an item in normal python list is O(s) where 's' is the length of the array. This is less than O(n), with n being the number of nodes in fulll domain and negligible to the cost of doing an LU backsubstitution O(n^2)
+
+    sparse_greens_matrix = lil_pos_ut(solver.mesh, dtype='complex128')
+    iter = 0 #remove this counter later. Just for debugging right now    
+    while connection_count_list != []: #as long as there are still connections left
+        print "Generating Green's function %i."%(iter+1)
+        max_index = np.argmax(connection_count_list, axis=0)
+        max_index = max_index[1] #the second index gives the row where the second column (i.e. the connection count) is the largest.
+        position_max_connections = connection_count_list[max_index][0] #(xpos,zpos)
+        
+        connecting_positions = sparse_connection_matrix.get_connecting_positions(position_max_connections)
+        
+        shot = generate_shot(solver, position_max_connections, connecting_positions)
+        
+        forward_model_and_store(solver, shot, sparse_greens_matrix, freq)
+        
+        update_connection_count_list(sparse_connection_matrix, connection_count_list, position_max_connections, connecting_positions) #remove the item, and decrease value of some by -1 and if they become 0 also remove those
+        iter = iter + 1
+
+    print "finished with greens matrix"
+    return sparse_greens_matrix
+
+def get_greens_by_position(from_x, from_z, to_x, to_z):
+    #this will index the sparse green's matrix by position (maybe move this function to new solver)
+    print "test"
+    
+def get_greens_by_node_nr(from_nr, to_nr):
+    print "test"
+    
+def validate_truncation_params(solver, boundary_params): #make sure your box does not exceed the boundaries of the full domain
+    domain = solver.domain
+    if domain.dim != 2:
+        raise Exception("Right now I only work with 2D")
+    
+    x_min = domain.x['lbound']
+    x_max = domain.x['rbound']
+    
+    z_min = domain.z['lbound']
+    z_max = domain.z['rbound']
+    
+    xpos_top_left_corner = boundary_params['xpos_top_left_corner']
+    zpos_top_left_corner = boundary_params['zpos_top_left_corner']
+    
+    width = boundary_params['width']
+    height = boundary_params['height']
+    
+    if xpos_top_left_corner + width > x_max:
+        raise Exception('Truncated domain exceeds right boundary full domain!')
+    
+    if zpos_top_left_corner + height > z_max:
+        raise Exception('Truncated domain exceeds bottom boundary of full domain!')
+    
+    mesh = solver.mesh
+    dx = mesh.x['delta']
+    dz = mesh.z['delta']
+    
+    #check and see if the truncated mesh coincides with grid points of full mesh
+    
+    #allow some slack up to a millimeter or so. Sometimes there are some rounding errors
+    eps = 1.0e-3
+    
+    #Modulus is buggy sometimes for large numbers (even double precision). So I am first getting the numbers to be between 0 and spacing.
+    left_remainder = xpos_top_left_corner - int(np.floor((xpos_top_left_corner-x_min)/dx))*dx - x_min
+    top_remainder  = zpos_top_left_corner - int(np.floor((zpos_top_left_corner-z_min)/dz))*dz - z_min
+    width_remainder = width - np.floor(width/dx)*dx
+    height_remainder = height - np.floor(height/dz)*dz
+    
+    if np.mod(left_remainder + eps, dx) > eps and np.mod(left_remainder, dx) > eps:
+        raise Exception('The left part of the truncated grid would not align with nodes on the full grid')
+    if np.mod(top_remainder + eps, dz) > eps and np.mod(top_remainder, dz) > eps:
+        raise Exception('The top part of the truncated grid would not align with nodes on the full grid') 
+    if np.mod(width_remainder + eps, dx) > eps and np.mod(width_remainder, dx) > eps:
+        raise Exception('The width of the truncated grid is not an integral number of nodes')    
+    if np.mod(height_remainder + eps, dz) > eps and np.mod(height_remainder, dz) > eps:
+        raise Exception('The height of the truncated grid is not an integral number of nodes')    
+    
+    #if np.mod(xpos_top_left_corner+eps-x_min, dx) > eps and np.mod(xpos_top_left_corner-x_min, dx) > eps: #Only investigate +eps. Let's say you do mod 25 and you have 24.9999 then adding eps would work. Subtracting eps never helps
+    #    raise Exception('The left part of the truncated grid would not align with nodes on the full grid') 
+    #if np.mod(zpos_top_left_corner+eps-z_min, dz) > eps and np.mod(zpos_top_left_corner-z_min, dz) > eps: #
+    #    raise Exception('The top part of the truncated grid would not align with nodes on the full grid')    
+    #if np.mod(width + eps, dx) > eps and np.mod(width, dx) > eps: #Only investigate +eps. Let's say you do mod 25 and you have 24.9999 then adding eps would work. Subtracting eps never helps
+    #    raise Exception('The width of the truncated grid is not an integral number of nodes')    
+    #if np.mod(height + eps, dz) > eps or np.mod(height, dz) > eps: #Only investigate +eps. Let's say you do mod 25 and you have 24.9999 then adding eps would work. Subtracting eps never helps
+    #    raise Exception('The height of the truncated grid is not an integral number of nodes')    
+
+    
+def fill_sparse_connection_matrix(solver, mat, shots, boundary_params):
+    print "filling sparse connection matrix\n"
+    
+    #DOES NOT YET WORK FOR SOURCESETS!!!
+    dx = solver.mesh.x['delta']
+    dz = solver.mesh.z['delta']
+    
+    xpos_top_left_corner = boundary_params['xpos_top_left_corner']
+    zpos_top_left_corner = boundary_params['zpos_top_left_corner']
+    width = boundary_params['width']
+    height = boundary_params['height']
+       
+    x_min = xpos_top_left_corner
+    x_max = xpos_top_left_corner + width
+    
+    z_min = zpos_top_left_corner
+    z_max = zpos_top_left_corner + height
+
+    truncated_n_nodes_x = int(np.round((x_max - x_min) / dx + 1))
+    truncated_n_nodes_z = int(np.round((z_max - z_min) / dz + 1))
+    
+    x_vals = np.linspace(x_min,x_max,truncated_n_nodes_x)
+    z_vals = np.linspace(z_min,z_max,truncated_n_nodes_z) 
+    
+    
+    #GET ALL THE POSITIONS ON THE TWO BOUNDARIES. 
+    #GET THE X AND Z VALUES THE SAME WAY AS IN TRUNCATED_HELMHOLTZ_SOLVER SO NO MINUTE FLOATING POINT DIFFERENCES WILL OCCUR
+    outer_box_node_positions = get_position_nodes_on_boundary(solver, x_vals, z_vals)
+    inner_box_node_positions = get_position_nodes_on_boundary(solver, x_vals[1:-1], z_vals[1:-1])
+    
+    
+    #FIND ALL THE UNIQUE SOURCE POSITIONS
+    print "finding unique source locations.\n"
+    unique_source_pos = []
+    for shot in shots:
+        if shot.sources.approximation != 'delta':
+            raise Exception('Working with delta sources is required for now')        
+    
+        source_pos = shot.sources.position #assuming single source
+        if source_pos not in unique_source_pos:
+            unique_source_pos.append(source_pos)
+        
+    #FIND ALL THE UNIQUE RECEIVER POSITIONS
+    print "finding unique receiver locations.\n"
+    unique_receiver_pos = []    
+    for shot in shots:
+        for receiver in shot.receivers.receiver_list:
+            if receiver.approximation != 'delta':
+                raise Exception('Working with delta receivers is required for now')
+            
+            receiver_pos = receiver.position
+            if receiver_pos not in unique_receiver_pos:
+                unique_receiver_pos.append(receiver_pos)
+              
+    #print "Connecting the unique source locations to the outer boundary.\n"
+    #for source_pos in unique_source_pos:
+    #    set_connection_node_to_box(mat,source_pos,outer_box_node_positions)
+    
+    #print "Connecting the unique receiver locations to the outer boundary.\n"
+    #for receiver_pos in unique_receiver_pos:
+    #    set_connection_node_to_box(mat,receiver_pos,outer_box_node_positions)    
+    
+    #print "Connecting the unique receiver locations to the inner boundary.\n"
+    #for receiver_pos in unique_receiver_pos:
+    #    set_connection_node_to_box(mat,receiver_pos,inner_box_node_positions)    
+    
+    print "Connecting the sources to the receivers. \n"
+    for shot in shots:
+        source_pos = shot.sources.position
+        for receiver in shot.receivers.receiver_list:
+            receiver_pos = receiver.position
+            mat.set_value_by_position(source_pos, receiver_pos, True)
+    
+    #Do all the connections requires for the nodes on the inner/outer boundary (outer->outer and inner->outer)
+    #print "Connecting the outer box to the inner box and itself.\n"
+    #n_outer_box_nodes = len(outer_box_node_positions)
+    #for i in xrange(n_outer_box_nodes):
+    #    set_connection_node_to_box(mat, outer_box_node_positions[i], outer_box_node_positions)
+    #    set_connection_node_to_box(mat, outer_box_node_positions[i], inner_box_node_positions)
+
+        #TEMPEDITSSSSSSS
+
+    print "Finished with generating the sparse connection matrix!\n"
+
+def set_connection_node_to_box(mat,pos,box_node_positions):
+    n_box_nodes = len(box_node_positions)
+    
+    for i in xrange(n_box_nodes):
+        mat.set_value_by_position(pos, box_node_positions[i], True) #Maybe see if I can rewrite lil_pos_ut in such a way that I can pass array 'box_node_positions' instead. More efficient probably.
+
+def get_position_nodes_on_boundary(solver, x_nodes, z_nodes): #box param contains the geometrical configuration of the square boundary along which the node positions are required. Can be the outer boundary or one layer inside for instance      
+    positions = []
+    
+    n_nodes_x = x_nodes.size
+    n_nodes_z = z_nodes.size
+    
+    #get x and z values from array and don't keep adding dx and dz. Floating point differences may accumulate. Do it the same way as in truncated_helmholtz_solver
+    
+    #left boundary
+    x_left_arr = np.zeros(n_nodes_z); x_left_arr[:] = x_nodes[0]
+    z_left_arr = z_nodes[:]
+    pos_left = zip(x_left_arr,z_left_arr)
+    
+    #right boundary
+    x_right_arr = np.zeros(n_nodes_z); x_right_arr[:] = x_nodes[-1]
+    z_right_arr = z_nodes[:]
+    pos_right = zip(x_right_arr,z_right_arr)
+    
+    #bot boundary
+    x_bot_arr = x_nodes[1:-1]
+    z_bot_arr = np.zeros(n_nodes_x-2); z_bot_arr[:] = z_nodes[-1]
+    pos_bot = zip(x_bot_arr,z_bot_arr)
+    
+    #top boundary
+    x_top_arr = x_nodes[1:-1]
+    z_top_arr = np.zeros(n_nodes_x-2); z_top_arr[:] = z_nodes[0]
+    pos_top = zip(x_top_arr,z_top_arr)    
+    
+    positions.extend(pos_left)
+    positions.extend(pos_right)
+    positions.extend(pos_bot)
+    positions.extend(pos_top)
+    
+    return positions
+
+def generate_connection_count_list(sparse_connection_matrix):
+    #first go through the matrix once to find all the positions that are there.
+    print "Generating connection count list. \n" 
+    [node_nr_from, node_nr_to] = sparse_connection_matrix.nonzero()
+    
+    #get all unique node numbers. Since upper triangular, the lowest numbers are in. Store in dict. Will set some nodes to 'present' several times, but at least I don't have to search through a list each time to find out if the node has been recorded already
+    nodes_with_connections_dict = dict()
+    all_nodes_with_connections_including_duplicates = np.append(node_nr_from, node_nr_to)
+    for node in all_nodes_with_connections_including_duplicates:
+        nodes_with_connections_dict[node] = 0
+        
+    #we now have recorded all the nodes that have connections. Turf all the connections
+    for i in xrange(node_nr_from.size):
+        node_from = node_nr_from[i]  
+        node_to = node_nr_to[i]
+        
+        if (node_from == node_to): #don't count double
+            nodes_with_connections_dict[node_from] += 1
+        else:
+            nodes_with_connections_dict[node_from] += 1
+            nodes_with_connections_dict[node_to]   += 1
+    
+    #now fill the connection_count_list according to the specification I use in other functions. In retrospect a dict may have been easier to handle, but it is not a real problem.
+    connection_count_list = []
+    sorted_node_numbers = sorted(nodes_with_connections_dict.keys()) 
+    for node in sorted_node_numbers: #sorted_node_numbers is a sorted list. So I will start with the lower node numbers and then work my way up. The ordering of the nodes in the connection_count_list is like expected, following the node number
+        pos = sparse_connection_matrix.turn_node_nr_into_position(node) 
+        n_con = nodes_with_connections_dict[node]
+        connection_count_list.append([pos,n_con])
+    
+    print "Finished generating connection count list. \n"
+    
+    return connection_count_list
+    #sorted [[(key1, key2), key3], [(key1, key2), key3], [(key1, key2), key3], .... ] will sort on key1. For equal matches, key2 decides. And then key3. So this will generate a list with increasing position x which I use everywhere else as well 
+
+def generate_shot(solver, position_max_connections, connecting_positions):
+    mesh = solver.mesh
+    
+    source = PointSource(mesh, position_max_connections, Delta(), approximation = 'delta')
+    receivers = ReceiverSet(mesh, [PointReceiver(mesh, p, approximation = 'delta') for p in connecting_positions], approximation = 'delta') #Not sure if second pointreceiver actually does anything
+    shot = Shot(source, receivers)
+    return shot
+
+def forward_model_and_store(solver, shot, sparse_greens_matrix, freq):
+    generate_seismic_data([shot], solver, solver.model_parameters.without_padding(), frequencies = freq)
+    
+    n_receivers = len(shot.receivers.receiver_list) 
+    source_pos = shot.sources.position
+    for i in xrange(n_receivers):
+        receiver = shot.receivers.receiver_list[i]
+        receiver_pos = receiver.position
+        
+        recording = shot.receivers.data_dft[freq][0][i]
+        sparse_greens_matrix.set_value_by_position(source_pos, receiver_pos, recording) 
+            
+
+def update_connection_count_list(sparse_connection_matrix, connection_count_list, position_max_connections, connecting_positions): 
+    #remove the item, and decrease value of some by -1 and if they become 0 also remove those
+    
+    #connecting_positions should have been ordered so that the positions are in order of increasing node number. This should also be the case in connection_count_list
+    
+    #Set corresponding entries in sparse_connecting_matrix to 0. Not necessary, but will result in fewer receiver objects being generated in the future.
+    for i in xrange(len(connecting_positions)):
+        sparse_connection_matrix.set_value_by_position(position_max_connections, connecting_positions[i], 0)
+    
+    #update connection_count_list by decreasing values by -1. Assuming connection_count_list and connecting_positions have been ordered by node_number (so same ordering)
+    j = 0
+    for i in xrange(len(connection_count_list)):
+        if connection_count_list[i][0] == connecting_positions[j]:
+            connection_count_list[i][1] = connection_count_list[i][1] - 1
+            j = j + 1
+            
+        if j == len(connecting_positions): #before reaching the end of the connection_count_list, we already went through the entire 'connecting_positions' array. The next evaluation of if connection_count_list[i][0] == connecting_positions[j] would result in a crash.  
+            break 
+    
+    #finished decreasing by -1. Now remove the position_max_connections entry from connection_count_list and remove any value at 0
+    delete_positions = []
+    for i in xrange(len(connection_count_list)):
+        if connection_count_list[i][0] == position_max_connections: #the node for which we just computed all connections
+            delete_positions.append(i)
+        elif connection_count_list[i][1] <= 0: #if no connections remaining
+            delete_positions.append(i)
+    
+    #we now have a list of entries to delete from low to high. Start with the highest one, because the index of all later values will change but we dont care in that case
+    delete_positions.reverse()
+    for i in delete_positions:
+        del connection_count_list[i]
+        
+    
