@@ -46,4 +46,4 @@ This folder contains all the main codes to reproduce the main results from "Kots
 
 -----------------
 
-Please let me know, if something doesn't work fine!
+Please let me know if there are any issues!
