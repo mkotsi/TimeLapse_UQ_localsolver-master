@@ -26,29 +26,19 @@ This folder contains all the main codes to reproduce the main results from "Kots
 seismic imaging: a full-wavefield approach : Geophysical Journal International, 2020". If you find these codes useful, we would appreciate
 a citation. 
 
-1_generate_true_data.py : assuming that the true models are known and saved in the folder indata, the code generates the true data
-                         for baseline and monitor model for 64 shots and 6 frequencies. The data as well as their geometries will 
-                         be saved in the folder indata.
+1_generate_true_data.py : assuming that the true models are known and saved in the folder indata, the code generates the true data for baseline and monitor model for 64 shots and 6 frequencies. The data as well as their geometries will be saved in the folder indata.
                          
-2_generate_background_greens.py : sets up the boundaries of the local domain and compute the Green's functions of the background model.
-								 Here the background model is the true baseline model. The output information is saved in outdata/truncated_solver_components
+2_generate_background_greens.py : sets up the boundaries of the local domain and compute the Green's functions of the background model. Here the background model is the true baseline model. The output information is saved in outdata/truncated_solver_components
 								 
-3_generated_DCT_matrices.py : using the 2D DCT formula this code generates the total number of DCT matrices that will be used to generate the 
-                              Phi matrix. The DCT matrices are saved in outdata/dct_components.
+3_generated_DCT_matrices.py : using the 2D DCT formula this code generates the total number of DCT matrices that will be used to generate the Phi matrix. The DCT matrices are saved in outdata/dct_components.
                               
-4_save_true_models_in_local_domain.py : loads the true models from indata, truncates them to the local domain size and saves then in
-                                        outdata/dct_components.
+4_save_true_models_in_local_domain.py : loads the true models from indata, truncates them to the local domain size and saves then in outdata/dct_components.
                                         
-5_generate_alpha_coefficients_and_Phi_matrix.m : generates the Phi matrix, performs SVD to retrieve the alpha (DCT) coefficients, and chooses 
-                                               the subset of 20 coefficients. All information is saved outdata/dct_components.
+5_generate_alpha_coefficients_and_Phi_matrix.m : generates the Phi matrix, performs SVD to retrieve the alpha (DCT) coefficients, and chooses the subset of 20 coefficients. All information is saved outdata/dct_components.
                                                
-6_save_true_data_from_shot_32.py : The Metropolis Hastings algorithm at this stage is run using a single shot and a single frequency. This
-                                   code saves in .mat format (so they can be easily used) the data for shot number 32 and frequency of 8 Hz. 
-                                   The data are saved in outdata/measuredField_at_shot_32_with_freq_8.
+6_save_true_data_from_shot_32.py : The Metropolis Hastings algorithm at this stage is run using a single shot and a single frequency. This code saves in .mat format (so they can be easily used) the data for shot number 32 and frequency of 8 Hz. The data are saved in outdata/measuredField_at_shot_32_with_freq_8.
                                    
-7_create_noisy_measurements_for_shot_32.m : given the data saved from the previous code, this code generates uncorrelated Gaussian noise
-                                            given a known covariance matrix matrix. Outputs are the covariance matrix, the covariance inverse,
-                                            and the noisy time-lapse data, and are saved in outdata/measuredField_at_shot_32_with_freq_8.
+7_create_noisy_measurements_for_shot_32.m : given the data saved from the previous code, this code generates uncorrelated Gaussian noise given a known covariance matrix matrix. Outputs are the covariance matrix, the covariance inverse, and the noisy time-lapse data, and are saved in outdata/measuredField_at_shot_32_with_freq_8.
                                             
 8_adaptive_metropolis_hastings_inversion.py : runs the Adaptive Metropolis Hastings inversion for a single chain and saves outputs in outdata/mcmc_results.
 
