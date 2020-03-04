@@ -26,6 +26,8 @@ FOLDER: METROPOLIS_HASTINGS
 
 This folder contains all the main codes to reproduce the main results from "Kotsi M., A. Malcolm, and G. Ely, Uncertainty quantification in time-lapse seismic imaging: a full-wavefield approach : Geophysical Journal International, 2020". If you find these codes useful, we would appreciate a citation. 
 
+Some of the following codes are written in Matlab. These cannot be through the docker image. The user will need to run them locally on their machine. 
+
 1_generate_true_data.py : assuming that the true models are known and saved in the folder indata, the code generates the true data for baseline and monitor model for 64 shots and 6 frequencies. The data as well as their geometries will be saved in the folder indata.
                          
 2_generate_background_greens.py : sets up the boundaries of the local domain and compute the Green's functions of the background model. Here the background model is the true baseline model. The output information is saved in outdata/truncated_solver_components
