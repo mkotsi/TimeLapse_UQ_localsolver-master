@@ -7,7 +7,7 @@ GETTING STARTED WITH DOCKER
 The docker image was originally build by Gregory Ely. All python codes and extensions in this image are using python 2.7
 
 0. Install docker desktop from https://www.docker.com/ and setup an account.
-1. Build the image by opening a terminal and from within the docker_image directory run: docker build -t uqtest .
+1. Build the image by opening a terminal and from within the docker_image directory run: "docker build -t uqtest ."
 2. Move to a directory containing the scripts of interest i.e. metropolis_hastings
 3. Run: docker run -v $(pwd):/home/shared -it uqtest
 	   You will now be inside a docker instance with pysit installed!  The files that were contained in your
