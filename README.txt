@@ -4,7 +4,9 @@ These codes perform time-lapse Metropolis-Hastings inversion using a local acous
 
 GETTING STARTED WITH DOCKER
 
-The docker image was originally build by Gregory Ely. All python codes and extensions in this image are using python 2.7
+The docker image was originally build by Gregory Ely (http://www.mit.edu/~elyg/). 
+
+All python codes and extensions in this image are using python 2.7
 
 0. Install docker desktop from https://www.docker.com/ and setup an account.
 1. Build the image by opening a terminal and from within the docker_image directory run: "docker build -t uqtest ."
