@@ -3,7 +3,7 @@ clc
 clear
 
 % Generate the full Phi matrix
-load /outdata/dct_components/outputs.mat
+load outdata/dct_components/outputs.mat
 N = size(outputs,1);
 phimatrix_full = zeros(N,N);
 
@@ -18,6 +18,11 @@ end
 %load the true models
 
 load true_models_in_local_domain.mat
+
+
+%load the taper for the edges
+
+load outdata/dct_components/taper_2d.mat
 
 
 %turn the time lapse model into a vector
@@ -116,6 +121,6 @@ figure(5);
 imagesc(reconstruction_20_2d_tapered)
 
 %% Save all information
-save ('/outdata/dct_components/subset_of_alpha_coefficients.mat', 'idx', 'alphas_20', 'alphas_20_vector', 'alphas_2d', 'reconstruction_20', 'reconstruction_20_2d', 'reconstruction_20_2d_tapered');
+save ('outdata/dct_components/subset_of_alpha_coefficients.mat', 'idx', 'alphas_20', 'alphas_20_vector', 'alphas_2d', 'reconstruction_20', 'reconstruction_20_2d', 'reconstruction_20_2d_tapered');
 
-save('/outdata/dct_components/phi_matrix.mat', 'phi')
+save('outdata/dct_components/phi_matrix.mat', 'phi')

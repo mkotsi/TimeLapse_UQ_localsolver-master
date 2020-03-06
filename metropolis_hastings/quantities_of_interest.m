@@ -1,11 +1,11 @@
 % load mcmc results
-load /outdata/mcmc_results/Chain1_freq8_initalphas1_truebaseback_iter_100000_initial_sigma_0.0056.mat
+load outdata/mcmc_results/Chain1_freq8_initalphas1_truebaseback_iter_100000_initial_sigma_0.0056.mat
 
 % load the phi matrix
-load /outdata/dct_components/phi_matrix.mat
+load outdata/dct_components/phi_matrix.mat
 
 % load the true time-lapse model
-load('/outdata/dct_components/true_models_in_local_domain.mat', 'truncated_timelapse_velocity_2d')
+load('outdata/dct_components/true_models_in_local_domain.mat', 'truncated_timelapse_velocity_2d')
 
 % Generate the time-lapse models along the chain
 
@@ -35,8 +35,8 @@ for jj = 1 : n
     dm                     = reshape(deltam(ii,:), 25,44); % reshape to a 2D model
     dm                     = dm.*taper_2d;                 % apply the taper
     Subdomain              = dm(11:17,14:31);              % get the subdomain for average velocity calculation
-    Subdom_vec             = Subdom(:);                    % make it a vector
-    average_velocity(ii)   = mean(velLine);                % average velocity calc
+    Subdom_vec             = Subdomain(:);                 % make it a vector
+    average_velocity(ii)   = mean(Subdom_vec);             % average velocity calc
     
     
     vertical_line(ii,:)    = dm(:,22);                     % extract line for vertical extent calc

@@ -1,12 +1,12 @@
 
 % load the baseline data
-load /outdata/measuredField_at_shot_32_with_freq_8/baseline_data.mat
+load outdata/measuredField_at_shot_32_with_freq_8/baseline_data.mat
 
 % load the monitor data
-load /outdata/measuredField_at_shot_32_with_freq_8/monitor_data.mat
+load outdata/measuredField_at_shot_32_with_freq_8/monitor_data.mat
 
 % load the time-lapse data
-load /outdata/measuredField_at_shot_32_with_freq_8/residuals_recorded.mat %% d1-d0
+load outdata/measuredField_at_shot_32_with_freq_8/residuals_recorded.mat %% d1-d0
 
 % I do not want to worry about complex numbers, so I concatinate the
 % imagianry part after the real part
@@ -71,10 +71,10 @@ noise_signal_ratio = norm(residuals_recorded)/norm(myNoise);
 %% Save
 
 % covariance matrix
-save('/outdata/measuredField_at_shot_32_with_freq_8/Covariance_matrix.mat', 'covMatrix')
+save('outdata/measuredField_at_shot_32_with_freq_8/Covariance_matrix.mat', 'covMatrix')
 
 % covariance inverse
-save('/outdata/measuredField_at_shot_32_with_freq_8/Covariance_inverse.mat', 'covInv')
+save('outdata/measuredField_at_shot_32_with_freq_8/Covariance_inverse.mat', 'covInv')
 
 % complex noisy time-lapse data
 save('/outdata/measuredField_at_shot_32_with_freq_8/Noisy_measured_field.mat', 'noisyField')

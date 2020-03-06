@@ -1,9 +1,9 @@
 
 % load mcmc results
-load /outdata/mcmc_results/Chain1_freq8_initalphas1_truebaseback_iter_100000_initial_sigma_0.0056.mat
+load outdata/mcmc_results/Chain1_freq8_initalphas1_truebaseback_iter_100000_initial_sigma_0.0056.mat
 
 % load the true values of the alpha coefficients
-load ('/outdata/dct_components/subset_of_alpha_coefficients.mat', 'alphas_20_vector')
+load ('outdata/dct_components/subset_of_alpha_coefficients.mat', 'alphas_20_vector')
 
 % calculate the acceptance rate --> it should be between 0.1 and 0.6
 % otherwise the step size will need to be adjusted
