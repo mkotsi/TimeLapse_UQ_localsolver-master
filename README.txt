@@ -4,10 +4,12 @@ These codes perform time-lapse Metropolis-Hastings inversion using a local acous
 
 GETTING STARTED WITH DOCKER
 
-The docker image was originally build by Gregory Ely. All python codes and extensions in this image are using python 2.7
+The docker image was originally build by Gregory Ely (http://www.mit.edu/~elyg/). 
+
+All python codes and extensions in this image are using python 2.7
 
 0. Install docker desktop from https://www.docker.com/ and setup an account.
-1. Build the image by opening a terminal and from within the docker_image directory run: docker build -t uqtest .
+1. Build the image by opening a terminal and from within the docker_image directory run: "docker build -t uqtest ."
 2. Move to a directory containing the scripts of interest i.e. metropolis_hastings
 3. Run: docker run -v $(pwd):/home/shared -it uqtest
 	   You will now be inside a docker instance with pysit installed!  The files that were contained in your
@@ -24,11 +26,13 @@ FOLDER: METROPOLIS_HASTINGS
 
 This folder contains all the main codes to reproduce the main results from "Kotsi M., A. Malcolm, and G. Ely, Uncertainty quantification in time-lapse seismic imaging: a full-wavefield approach : Geophysical Journal International, 2020". If you find these codes useful, we would appreciate a citation. 
 
+Some of the following codes are written in Matlab. These cannot be run through the docker image. The user will need to run them locally on their machine. 
+
 1_generate_true_data.py : assuming that the true models are known and saved in the folder indata, the code generates the true data for baseline and monitor model for 64 shots and 6 frequencies. The data as well as their geometries will be saved in the folder indata.
                          
 2_generate_background_greens.py : sets up the boundaries of the local domain and compute the Green's functions of the background model. Here the background model is the true baseline model. The output information is saved in outdata/truncated_solver_components
 								 
-3_generated_DCT_matrices.py : using the 2D DCT formula this code generates the total number of DCT matrices that will be used to generate the Phi matrix. The DCT matrices are saved in outdata/dct_components.
+3_generate_DCT_matrices.py : using the 2D DCT formula this code generates the total number of DCT matrices that will be used to generate the Phi matrix. The DCT matrices are saved in outdata/dct_components.
                               
 4_save_true_models_in_local_domain.py : loads the true models from indata, truncates them to the local domain size and saves then in outdata/dct_components.
                                         
