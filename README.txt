@@ -18,8 +18,6 @@ All python codes and extensions in this image are using python 2.7
 5. Run a python script: python 1_generate_true_data.py
 6. Now when you exit the docker image by typing exit() any files you save to /home/shared will appear in your local directory.
 
-/localsolveruq/docker_image
-
 -----------------
 
 FOLDER: METROPOLIS_HASTINGS
