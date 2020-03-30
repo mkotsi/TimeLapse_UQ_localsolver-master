@@ -7,6 +7,9 @@ load outdata/dct_components/phi_matrix.mat
 % load the true time-lapse model
 load('outdata/dct_components/true_models_in_local_domain.mat', 'truncated_timelapse_velocity_2d')
 
+% load the taper
+load outdata/dct_components/taper_2d.mat
+
 % Generate the time-lapse models along the chain
 
 n      = 100000;        % number of iterations
@@ -32,15 +35,15 @@ sub_vec_true          = subdomain_true(:);
 average_velocity_true = mean(sub_vec_true);
 
 for jj = 1 : n
-    dm                     = reshape(deltam(ii,:), 25,44); % reshape to a 2D model
+    dm                     = reshape(deltam(jj,:), 25,44); % reshape to a 2D model
     dm                     = dm.*taper_2d;                 % apply the taper
     Subdomain              = dm(11:17,14:31);              % get the subdomain for average velocity calculation
     Subdom_vec             = Subdomain(:);                 % make it a vector
-    average_velocity(ii)   = mean(Subdom_vec);             % average velocity calc
+    average_velocity(jj)   = mean(Subdom_vec);             % average velocity calc
     
     
-    vertical_line(ii,:)    = dm(:,22);                     % extract line for vertical extent calc
-    horizontal_line(ii,:)  = dm(14,:);                     % extract line for horizontal extent calc
+    vertical_line(jj,:)    = dm(:,22);                     % extract line for vertical extent calc
+    horizontal_line(jj,:)  = dm(14,:);                     % extract line for horizontal extent calc
                       
 end
 
